@@ -1,5 +1,5 @@
 # fPhysics
-fphysics is a lightweight and straightforward physics library for raylib, consisting of approximately 500 lines of code.
+fphysics is header-only physics library for raylib, consisting of approximately 500 lines of code.
 
 This library is designed for developers who want an easy-to-use physics solution for their simple projects like Asteroids clone and other simple 2D games.
 
