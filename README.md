@@ -3,6 +3,8 @@ fphysics is a lightweight and straightforward physics library for raylib, consis
 
 This library is designed for developers who want an easy-to-use physics solution for their simple projects like Asteroids clone and other simple 2D games.
 
+[Demo video](https://streamable.com/e/ywcm1z)
+
 ### Features
 - Rigidbodies: Create and simulate rigidbodies from convex polygons.
 - Collision and Friction Simulation: Handle realistic physics interactions.
@@ -14,3 +16,6 @@ This library is designed for developers who want an easy-to-use physics solution
 - Optimizations: No support for spatial hashing or other advanced optimizations.
 
 #### To Learn how to use this library you can look at our examples
+
+[Simple Example](simple.c)
+[Complex Example](complex.c)
