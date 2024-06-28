@@ -18,3 +18,5 @@ This library is designed for developers who want an easy-to-use physics solution
 
 [Simple Example](simple.c)
 [Complex Example](complex.c)
+
+This implementation is based on the [PixelPhysics](https://www.youtube.com/@pixel_physics) awesome tutorial. His JavaScript implementation available [here](https://gitlab.com/Marcel.K/tutorials/-/tree/main/2D%20Physics%20Engine?ref_type=heads).
