@@ -3,20 +3,23 @@ fphysics is header-only physics library for raylib, consisting of approximately 
 
 This library is designed for developers who want an easy-to-use physics solution for their simple projects like Asteroids clone and other simple 2D games.
 
-[Demo video](https://streamable.com/e/ywcm1z)
+## ⚠️ Warning
+
+This library depends on **Raylib 5.5**. Please ensure you have the correct version installed before using this library.
 
 ### Features
 - Create and simulate rigidbodies from convex polygons.
 - Collision and Friction
 - Anchors Support
-### Limitations
-- No Bounding Boxes
-- No Ray Intersections
-- No Spatial Hashing
+
+### Roadmap
+- Joints
+- Spatial Hashing
+- Bounding Boxes
+- Ray Intersections
 
 #### To Learn how to use this library you can look at our examples
 
-[Simple Example](simple.c)
-[Complex Example](complex.c)
+[Simple Example](example.c)
 
-This implementation is based on the [PixelPhysics](https://www.youtube.com/@pixel_physics) awesome tutorial. His JavaScript implementation available [here](https://gitlab.com/Marcel.K/tutorials/-/tree/main/2D%20Physics%20Engine?ref_type=heads).
+This implementation is based on the [PixelPhysics](https://www.youtube.com/@pixel_physics) awesome tutorial. His JavaScript implementation available [here](https://gitlab.com/Marcel.K/tutorials/).

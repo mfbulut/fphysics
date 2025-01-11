@@ -2,7 +2,7 @@
  ********************************************************************************
  * @file    fphysics.h
  * @author  mfbulut
- * @date    29.06.2024
+ * @date    11.01.2025
  ********************************************************************************
 **/
 
@@ -12,27 +12,20 @@
 #include "raylib.h"
 #include "raymath.h"
 
-// Utils
-Vector2 Perpendicular(Vector2 v);
-float Vector2CrossProduct(Vector2 v1, Vector2 v2);
-
 // Polygon
 typedef struct {
-    Vector2* vertices;
-    int vertexCount;
-    Color color;
     Vector2 centroid;
+    Vector2* vertices;
     Vector2* normals;
+    int vertexCount;
 } Polygon;
 
-Polygon* CreatePolygon(Vector2* vertices, int vertexCount, Color color);
-Polygon* CreateRectangle(Vector2 position, float width, float height, Color color);
+Polygon* CreatePolygon(Vector2* vertices, int vertexCount);
+Polygon* CreateRectangle(Vector2 position, float width, float height);
 void DestroyPolygon(Polygon* polygon);
 Vector2 CalculateCentroid(Vector2* vertices, int vertexCount);
 Vector2* CalculateNormals(Vector2* vertices, int vertexCount);
 float CalculateArea(Vector2* vertices, int vertexCount);
-int IsPointInside(Polygon* polygon, Vector2 pos);
-void DrawPolygon(Polygon* polygon);
 void MovePolygon(Polygon* polygon, Vector2 delta);
 void RotatePolygon(Polygon* polygon, float radians);
 float CalculateInertia(Polygon* polygon, float mass);
@@ -61,7 +54,6 @@ typedef struct {
 Rigidbody CreateRigidbody(Polygon* polygon, float mass, PhysicsMaterial material);
 void AddForce(Rigidbody* body, Vector2 force);
 void UpdateRigidbody(Rigidbody* body, float deltaTime);
-void SemiImplicitEuler(Rigidbody* body, float deltaTime);
 
 // Anchor
 typedef struct {
@@ -83,7 +75,6 @@ typedef struct {
 } CollisionManifold;
 
 CollisionManifold CreateCollisionManifold(float depth, Vector2 normal, Vector2 penetrationPoint);
-void FlipNormal(CollisionManifold manifold);
 void ResolveCollision(CollisionManifold manifold);
 void PositionalCorrection(CollisionManifold manifold);
 
@@ -101,33 +92,21 @@ bool HandleCollision(Rigidbody* rb1, Rigidbody* rb2);
 
 #ifdef FPHYSICS_IMPLEMENTATION
 
-// Utils
-
-Vector2 Perpendicular(Vector2 v) {
-    return (Vector2){-v.y, v.x};
-}
-
-float Vector2CrossProduct(Vector2 v1, Vector2 v2)
-{
-    return v1.x * v2.y - v1.y * v2.x;
-}
-
 // Polygon
 
-Polygon* CreatePolygon(Vector2* vertices, int vertexCount, Color color) {
+Polygon* CreatePolygon(Vector2* vertices, int vertexCount) {
     Polygon* polygon = (Polygon*)MemAlloc(sizeof(Polygon));
     polygon->vertices = (Vector2*)MemAlloc(vertexCount * sizeof(Vector2));
     for (int i = 0; i < vertexCount; i++) {
         polygon->vertices[i] = vertices[i];
     }
     polygon->vertexCount = vertexCount;
-    polygon->color = color;
     polygon->centroid = CalculateCentroid(vertices, vertexCount);
     polygon->normals = CalculateNormals(vertices, vertexCount);
     return polygon;
 }
 
-Polygon* CreateRectangle(Vector2 position, float width, float height, Color color) {
+Polygon* CreateRectangle(Vector2 position, float width, float height) {
     Vector2 vertices[] = {
         (Vector2){position.x - width / 2, position.y - height / 2},
         (Vector2){position.x + width / 2, position.y - height / 2},
@@ -135,7 +114,7 @@ Polygon* CreateRectangle(Vector2 position, float width, float height, Color colo
         (Vector2){position.x - width / 2, position.y + height / 2}
     };
 
-    Polygon* rectangle = CreatePolygon(&vertices[0], 4, color);
+    Polygon* rectangle = CreatePolygon(&vertices[0], 4);
     return rectangle;
 }
 
@@ -179,23 +158,6 @@ float CalculateArea(Vector2* vertices, int vertexCount) {
         A += vertices[i].x * vertices[next].y - vertices[next].x * vertices[i].y;
     }
     return A / 2;
-}
-
-int IsPointInside(Polygon* polygon, Vector2 pos) {
-    for (int i = 0; i < polygon->vertexCount; i++) {
-        Vector2 vertex = polygon->vertices[i];
-        Vector2 normal = polygon->normals[i];
-        Vector2 vertToPoint = Vector2Subtract(pos, vertex);
-        float dot = Vector2DotProduct(vertToPoint, normal);
-        if (dot > 0) return 0;
-    }
-    return 1;
-}
-
-void DrawPolygon(Polygon* polygon) {
-    for (int i = 0; i < polygon->vertexCount; i++) {
-        DrawLineV(polygon->vertices[i], polygon->vertices[(i + 1) % polygon->vertexCount], polygon->color);
-    }
 }
 
 void MovePolygon(Polygon* polygon, Vector2 delta) {
@@ -274,14 +236,6 @@ void ApplyForceAtPoint(Rigidbody* body, Vector2 force, Vector2 point) {
 }
 
 void UpdateRigidbody(Rigidbody* body, float deltaTime) {
-    SemiImplicitEuler(body, deltaTime);
-    body->velocity = Vector2Scale(body->velocity, 0.999f);
-    body->angularVelocity *= 0.995f;
-    body->forceAccumulator = (Vector2){ 0, 0 };
-    body->torqueAccumulator = 0;
-}
-
-void SemiImplicitEuler(Rigidbody* body, float deltaTime) {
     if (body->invMass > 0) {
         Vector2 acceleration = Vector2Scale(body->forceAccumulator, body->invMass);
         body->velocity = Vector2Add(body->velocity, Vector2Scale(acceleration, deltaTime));
@@ -295,6 +249,11 @@ void SemiImplicitEuler(Rigidbody* body, float deltaTime) {
         float deltaRotation = body->angularVelocity * deltaTime;
         RotatePolygon(body->polygon, deltaRotation);
     }
+
+    body->velocity = Vector2Scale(body->velocity, 0.999f);
+    body->angularVelocity *= 0.995f;
+    body->forceAccumulator = (Vector2){ 0, 0 };
+    body->torqueAccumulator = 0;
 }
 
 // Anchor
@@ -302,7 +261,7 @@ Anchor CreateAnchor(Rigidbody* rigidbody, Vector2 p3) {
     Vector2 p1 = rigidbody->polygon->vertices[0];
     Vector2 p2 = rigidbody->polygon->vertices[1];
     Vector2 d = Vector2Subtract(p2, p1);
-    Vector2 dPerp = Perpendicular(d);
+    Vector2 dPerp = (Vector2){-d.y, d.x};
     Vector2 dp3 = Vector2Subtract(p3, p1);
 
     float denom = d.x * d.x + d.y * d.y;
@@ -317,7 +276,7 @@ Vector2 AnchorPosition(Anchor anchor) {
     Vector2 p1 = anchor.rigidbody->polygon->vertices[0];
     Vector2 p2 = anchor.rigidbody->polygon->vertices[1];
     Vector2 d = Vector2Subtract(p2, p1);
-    Vector2 dPerp = Perpendicular(d);
+    Vector2 dPerp = (Vector2){-d.y, d.x};
 
     return Vector2Add(p1, Vector2Add(Vector2Scale(d, anchor.point.x), Vector2Scale(dPerp, anchor.point.y)));
 }
