@@ -8,12 +8,13 @@ This library is designed for developers who want an easy-to-use physics solution
 This library depends on **Raylib 5.5**. Please ensure you have the correct version installed before using this library.
 
 ### Features
-- Create and simulate rigidbodies from convex polygons.
-- Collision and Friction
+- Rigid bodies
+- Polygons Collision
+- Friction and resistance
 - Anchors Support
 
 ### Roadmap
-- Joints
+- Joints (Experimental Support)
 - Spatial Hashing
 - Bounding Boxes
 - Ray Intersections
