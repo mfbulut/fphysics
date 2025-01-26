@@ -1,5 +1,5 @@
 # fPhysics
-fphysics is header-only physics library for raylib, consisting of approximately 500 lines of code.
+fphysics is header-only physics library for raylib, consisting of approximately 400 lines of code.
 
 This library is designed for developers who want an easy-to-use physics solution for their simple projects like Asteroids clone and other simple 2D games.
 
@@ -8,13 +8,13 @@ This library is designed for developers who want an easy-to-use physics solution
 This library depends on **Raylib 5.5**. Please ensure you have the correct version installed before using this library.
 
 ### Features
-- Rigid bodies
+- Rigid Bodies
 - Polygons Collision
 - Friction and resistance
 - Anchors Support
 
 ### Roadmap
-- Joints (Experimental Support)
+- Joints
 - Spatial Hashing
 - Bounding Boxes
 - Ray Intersections

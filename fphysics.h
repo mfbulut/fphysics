@@ -1,430 +1,154 @@
-/**
- ********************************************************************************
- * @file    fphysics.h
- * @author  mfbulut
- * @date    15.01.2025
- ********************************************************************************
-**/
-
 #ifndef FPHYSICS_H
 #define FPHYSICS_H
 
 #include "raylib.h"
 #include "raymath.h"
 
-// Polygon
 typedef struct {
-    Vector2 centroid;
-    Vector2* vertices;
-    Vector2* normals;
-    int vertexCount;
-    float orientation;
-} Polygon;
-
-Polygon* CreatePolygon(Vector2* vertices, int vertexCount);
-Polygon* CreateRectangle(Vector2 position, float width, float height);
-void DestroyPolygon(Polygon* polygon);
-Vector2 CalculateCentroid(Vector2* vertices, int vertexCount);
-Vector2* CalculateNormals(Vector2* vertices, int vertexCount);
-float CalculateArea(Vector2* vertices, int vertexCount);
-void MovePolygon(Polygon* polygon, Vector2 delta);
-void RotatePolygon(Polygon* polygon, float radians);
-float CalculateInertia(Polygon* polygon, float mass);
-Vector2 RotateAroundPoint(Vector2 toRotate, Vector2 point, float radians);
-
-// Rigidbody
-typedef struct {
-    float restitution;
-    float friction;
-} PhysicsMaterial;
-
-typedef struct {
-    Polygon* polygon;
-    Vector2 forceAccumulator;
+    Vector2 *vertices;
+    Vector2 *normals;
+    Vector2 *transformedVertices;
+    Vector2 *transformedNormals;
+    Vector2 position;
     Vector2 velocity;
-    PhysicsMaterial material;
+    float rotation;
+    float angularVelocity;
     float mass;
     float invMass;
-    float torqueAccumulator;
-    float angularVelocity;
     float inertia;
     float invInertia;
-    int isKinematic;
+    float restitution;
+    float friction;
+    int vertexCount;
+    bool isKinematic;
 } Rigidbody;
 
-Rigidbody CreateRigidbody(Polygon* polygon, float mass, PhysicsMaterial material);
-void AddForce(Rigidbody* body, Vector2 force);
-void UpdateRigidbody(Rigidbody* body, float deltaTime);
-
-// Anchor
-typedef struct {
-    Vector2 point;
-    Rigidbody* rigidbody;
-} Anchor;
-
-Anchor CreateAnchor(Rigidbody* rigidbody, Vector2 p3);
-Vector2 AnchorPosition(Anchor anchor);
-
-// Collision Manifold
 typedef struct {
     float depth;
     Vector2 normal;
     Vector2 penetrationPoint;
-    Rigidbody* rigidbodyA;
-    Rigidbody* rigidbodyB;
     bool colliding;
-} CollisionManifold;
+} Manifold;
 
-CollisionManifold CreateCollisionManifold(float depth, Vector2 normal, Vector2 penetrationPoint);
-void ResolveCollision(CollisionManifold manifold);
-void PositionalCorrection(CollisionManifold manifold);
-
-// Collision Dedection
 typedef struct {
     Vector2 vertex;
     float penetrationDepth;
     bool valid;
 } SupportPoint;
 
-CollisionManifold CheckCollisions(Rigidbody* rigidbodyA, Rigidbody* rigidbodyB);
-CollisionManifold GetContactPoint(Polygon* shapePolygonA, Polygon* shapePolygonB);
+typedef struct {
+    Rigidbody* rigidbody;
+    Vector2 point;
+} Anchor;
+
+float CalculatePolygonInertia(Vector2 *vertices, int vertexCount, float mass);
+void TransformPoints(Rigidbody *rb);
+
+Rigidbody CreateBody(Vector2 *vertices, int count, Vector2 position, float mass);
+void UpdateBody(Rigidbody *rb, float dt);
+void DestroyBody(Rigidbody rigidbody);
+
 SupportPoint FindSupportPoint(Vector2 normalOnEdge, Vector2 pointOnEdge, Vector2* otherPolygonVertices, int vertexCount);
-void HandleCollision(Rigidbody* rb1, Rigidbody* rb2);
+Manifold GetContactPoint(Rigidbody* rigidbodyA, Rigidbody* rigidbodyB);
+Manifold CheckCollisions(Rigidbody* rigidbodyA, Rigidbody* rigidbodyB);
+void ResolveCollision(Manifold manifold, Rigidbody* rigidbodyA, Rigidbody* rigidbodyB);
+
+void AddForce(Rigidbody* body, Vector2 force);
+void AddTorque(Rigidbody* body, float torque);
+void ApplyForceAtPoint(Rigidbody* body, Vector2 force, Vector2 point);
+
+Anchor CreateAnchor(Rigidbody* rigidbody, Vector2 point);
+Vector2 AnchorPosition(Anchor anchor);
 
 #ifdef FPHYSICS_IMPLEMENTATION
 
-// Polygon
-
-Polygon* CreatePolygon(Vector2* vertices, int vertexCount) {
-    Polygon* polygon = (Polygon*)MemAlloc(sizeof(Polygon));
-    polygon->vertices = (Vector2*)MemAlloc(vertexCount * sizeof(Vector2));
-    for (int i = 0; i < vertexCount; i++) {
-        polygon->vertices[i] = vertices[i];
-    }
-    polygon->vertexCount = vertexCount;
-    polygon->centroid = CalculateCentroid(vertices, vertexCount);
-    polygon->normals = CalculateNormals(vertices, vertexCount);
-    return polygon;
-}
-
-Polygon* CreateRectangle(Vector2 position, float width, float height) {
-    Vector2 vertices[] = {
-        (Vector2){position.x - width / 2, position.y + height / 2},
-        (Vector2){position.x + width / 2, position.y + height / 2},
-        (Vector2){position.x + width / 2, position.y - height / 2},
-        (Vector2){position.x - width / 2, position.y - height / 2}
-    };
-
-    Polygon* rectangle = CreatePolygon(&vertices[0], 4);
-    return rectangle;
-}
-
-void DestroyPolygon(Polygon* polygon) {
-    MemFree(polygon->vertices);
-    MemFree(polygon->normals);
-    MemFree(polygon);
-}
-
-Vector2 CalculateCentroid(Vector2* vertices, int vertexCount) {
-    float area = CalculateArea(vertices, vertexCount);
-    float Cx = 0, Cy = 0;
-
-    for (int i = 0; i < vertexCount; i++) {
-        int next = (i + 1) % vertexCount;
-        float commonTerm = (vertices[i].x * vertices[next].y) - (vertices[next].x * vertices[i].y);
-        Cx += (vertices[i].x + vertices[next].x) * commonTerm;
-        Cy += (vertices[i].y + vertices[next].y) * commonTerm;
-    }
-
-    Cx /= (6 * area);
-    Cy /= (6 * area);
-
-    return (Vector2){ Cx, Cy };
-}
-
-Vector2* CalculateNormals(Vector2* vertices, int vertexCount) {
-    Vector2* normals = (Vector2*)MemAlloc(vertexCount * sizeof(Vector2));
-    for (int i = 0; i < vertexCount; i++) {
-        Vector2 direction = Vector2Subtract(vertices[i], vertices[(i + 1) % vertexCount]);
-        direction = Vector2Normalize(direction);
-        normals[i] = (Vector2){ direction.y, -direction.x };
-    }
-    return normals;
-}
-
-float CalculateArea(Vector2* vertices, int vertexCount) {
-    float A = 0;
-    for (int i = 0; i < vertexCount; i++) {
-        int next = (i + 1) % vertexCount;
-        A += vertices[i].x * vertices[next].y - vertices[next].x * vertices[i].y;
-    }
-    return A / 2;
-}
-
-void MovePolygon(Polygon* polygon, Vector2 delta) {
-    for (int i = 0; i < polygon->vertexCount; i++) {
-        polygon->vertices[i] = Vector2Add(polygon->vertices[i], delta);
-    }
-    polygon->centroid = Vector2Add(polygon->centroid, delta);
-}
-
-void RotatePolygon(Polygon* polygon, float radians) {
-    for (int i = 0; i < polygon->vertexCount; i++) {
-        polygon->vertices[i] = RotateAroundPoint(polygon->vertices[i], polygon->centroid, radians);
-    }
-    MemFree(polygon->normals);
-    polygon->normals = CalculateNormals(polygon->vertices, polygon->vertexCount);
-    polygon->orientation += radians;
-}
-
-float CalculateInertia(Polygon* polygon, float mass) {
+float CalculatePolygonInertia(Vector2 *vertices, int vertexCount, float mass) {
     float inertia = 0;
-    float massPerTriangleFace = mass / polygon->vertexCount;
-    for (int i = 0; i < polygon->vertexCount; i++) {
-        Vector2 centerToVertice0 = Vector2Subtract(polygon->vertices[i], polygon->centroid);
-        int indexVertice1 = (i + 1) % polygon->vertexCount;
-        Vector2 centerToVertice1 = Vector2Subtract(polygon->vertices[indexVertice1], polygon->centroid);
-        float inertiaTriangle = massPerTriangleFace * (Vector2LengthSqr(centerToVertice0) + Vector2LengthSqr(centerToVertice1) + Vector2DotProduct(centerToVertice0, centerToVertice1)) / 6;
-        inertia += inertiaTriangle;
+    float area = 0;
+
+    for (int i = 0; i < vertexCount; i++) {
+        Vector2 v1 = vertices[i];
+        Vector2 v2 = vertices[(i + 1) % vertexCount];
+        float cross = Vector2CrossProduct(v1, v2);
+        area += cross;
+        inertia += cross * (Vector2DotProduct(v1, v1) + Vector2DotProduct(v2, v2) + Vector2DotProduct(v1, v2));
     }
+
+    inertia *= (mass / 3.0f) / area;
+
     return inertia;
 }
 
-Vector2 RotateAroundPoint(Vector2 toRotate, Vector2 point, float radians) {
-    Vector2 dir = Vector2Subtract(toRotate, point);
-    Vector2 rotated = { dir.x * cosf(radians) - dir.y * sinf(radians), dir.x * sinf(radians) + dir.y * cosf(radians) };
-    return Vector2Add(rotated, point);
+void TransformPoints(Rigidbody *rb) {
+    float cosTheta = cosf(rb->rotation);
+    float sinTheta = sinf(rb->rotation);
+
+    for (int i = 0; i < rb->vertexCount; i++) {
+        Vector2 v = rb->vertices[i];
+        rb->transformedVertices[i] = (Vector2){
+            v.x * cosTheta - v.y * sinTheta + rb->position.x,
+            v.x * sinTheta + v.y * cosTheta + rb->position.y
+        };
+
+        Vector2 n = rb->normals[i];
+        rb->transformedNormals[i] = (Vector2){
+            n.x * cosTheta - n.y * sinTheta,
+            n.x * sinTheta + n.y * cosTheta
+        };
+    }
 }
 
-// Rigidbody
-
-Rigidbody CreateRigidbody(Polygon* polygon, float mass, PhysicsMaterial material) {
-    Rigidbody body = { 0 };
-    body.polygon = polygon;
-    body.mass = mass;
-    body.isKinematic = 0;
-    if (mass > 0.000001) {
-        body.invMass = 1.0f / mass;
+Rigidbody CreateBody(Vector2 *vertices, int count, Vector2 position, float mass) {
+    Rigidbody rb = { 0 };
+    rb.position = position;
+    rb.velocity = (Vector2){0, 0};
+    rb.rotation = 0;
+    rb.angularVelocity = 0;
+    rb.mass = mass;
+    if(mass != 0) {
+        rb.invMass =  1.0f / mass;
     } else {
-        body.invMass = 0;
-        body.isKinematic = 1;
+        rb.invMass = 0;
+        rb.isKinematic = true;
     }
-    body.torqueAccumulator = 0;
-    body.forceAccumulator = (Vector2){ 0, 0 };
-    body.velocity = (Vector2){ 0, 0 };
-    body.angularVelocity = 0;
-    body.material = material;
-    body.inertia = CalculateInertia(polygon, mass);
-    if (body.inertia > 0.00001) {
-        body.invInertia = 1.0f / body.inertia;
-    } else {
-        body.invInertia = 0;
-    }
-    return body;
-}
+    rb.vertexCount = count;
 
-void AddForce(Rigidbody* body, Vector2 force) {
-    body->forceAccumulator = Vector2Add(body->forceAccumulator, force);
-}
+    rb.vertices = (Vector2 *)MemAlloc(count * sizeof(Vector2));
+    rb.normals = (Vector2 *)MemAlloc(count * sizeof(Vector2));
+    rb.transformedVertices = (Vector2 *)MemAlloc(count * sizeof(Vector2));
+    rb.transformedNormals = (Vector2 *)MemAlloc(count * sizeof(Vector2));
 
-void ApplyForceAtPoint(Rigidbody* body, Vector2 force, Vector2 point) {
-    Vector2 centerOfMass = body->polygon->centroid;
-    Vector2 r = Vector2Subtract(point, centerOfMass);
-    float torque = Vector2CrossProduct(r, force);
+    rb.restitution = 0.1f;
+    rb.friction = 0.05f;
 
-    body->torqueAccumulator += torque;
-    body->forceAccumulator = Vector2Add(body->forceAccumulator, force);
-}
-
-void UpdateRigidbody(Rigidbody* body, float deltaTime) {
-    if (body->invMass > 0) {
-        Vector2 acceleration = Vector2Scale(body->forceAccumulator, body->invMass);
-        body->velocity = Vector2Add(body->velocity, Vector2Scale(acceleration, deltaTime));
-        Vector2 deltaPosition = Vector2Scale(body->velocity, deltaTime);
-        MovePolygon(body->polygon, deltaPosition);
+    for (int i = 0; i < count; i++) {
+        rb.vertices[i] = vertices[i];
     }
 
-    if (body->invInertia > 0) {
-        float rotationalAcceleration = body->torqueAccumulator * body->invInertia;
-        body->angularVelocity += rotationalAcceleration * deltaTime;
-        float deltaRotation = body->angularVelocity * deltaTime;
-        RotatePolygon(body->polygon, deltaRotation);
+    for (int i = 0; i < count; i++) {
+        Vector2 edge = Vector2Subtract(rb.vertices[i], rb.vertices[(i + 1) % count]);
+        rb.normals[i] = Vector2Normalize((Vector2){edge.y, -edge.x});
     }
 
-    // body->velocity = Vector2Scale(body->velocity, 0.999f);
-    body->angularVelocity *= 0.995f;
-    body->forceAccumulator = (Vector2){ 0, 0 };
-    body->torqueAccumulator = 0;
+    rb.inertia = CalculatePolygonInertia(rb.vertices, rb.vertexCount, rb.mass);
+    rb.invInertia = (rb.inertia != 0) ? 1.0f / rb.inertia : 0;
+
+    TransformPoints(&rb);
+
+    return rb;
 }
 
-// Anchor
-Anchor CreateAnchor(Rigidbody* rigidbody, Vector2 p3) {
-    Vector2 p1 = rigidbody->polygon->vertices[0];
-    Vector2 p2 = rigidbody->polygon->vertices[1];
-    Vector2 d = Vector2Subtract(p2, p1);
-    Vector2 dPerp = (Vector2){-d.y, d.x};
-    Vector2 dp3 = Vector2Subtract(p3, p1);
-
-    float denom = d.x * d.x + d.y * d.y;
-    float x = (dp3.x * d.x + dp3.y * d.y) / denom;
-    float y = (dp3.x * dPerp.x + dp3.y * dPerp.y) / denom;
-
-    Anchor anchor = { .point = {x, y}, .rigidbody = rigidbody };
-    return anchor;
+void UpdateBody(Rigidbody *rb, float dt) {
+    rb->position = Vector2Add(rb->position, Vector2Scale(rb->velocity, dt));
+    rb->rotation += rb->angularVelocity * dt;
+    TransformPoints(rb);
 }
 
-Vector2 AnchorPosition(Anchor anchor) {
-    Vector2 p1 = anchor.rigidbody->polygon->vertices[0];
-    Vector2 p2 = anchor.rigidbody->polygon->vertices[1];
-    Vector2 d = Vector2Subtract(p2, p1);
-    Vector2 dPerp = (Vector2){-d.y, d.x};
-
-    return Vector2Add(p1, Vector2Add(Vector2Scale(d, anchor.point.x), Vector2Scale(dPerp, anchor.point.y)));
-}
-
-// Collision Manifold
-
-CollisionManifold CreateCollisionManifold(float depth, Vector2 normal, Vector2 penetrationPoint) {
-    CollisionManifold manifold;
-    manifold.depth = depth;
-    manifold.normal = normal;
-    manifold.penetrationPoint = penetrationPoint;
-    manifold.rigidbodyA = 0;
-    manifold.rigidbodyB = 0;
-    manifold.colliding = false;
-    return manifold;
-}
-
-void ResolveCollision(CollisionManifold manifold) {
-    if (manifold.rigidbodyA->isKinematic && manifold.rigidbodyB->isKinematic) return;
-
-    Vector2 penetrationToCentroidA = Vector2Subtract(manifold.penetrationPoint, manifold.rigidbodyA->polygon->centroid);
-    Vector2 penetrationToCentroidB = Vector2Subtract(manifold.penetrationPoint, manifold.rigidbodyB->polygon->centroid);
-
-    Vector2 angularVelocityPenetrationCentroidA = (Vector2){
-        -1 * manifold.rigidbodyA->angularVelocity * penetrationToCentroidA.y,
-        manifold.rigidbodyA->angularVelocity * penetrationToCentroidA.x
-    };
-
-    Vector2 angularVelocityPenetrationCentroidB = (Vector2){
-        -1 * manifold.rigidbodyB->angularVelocity * penetrationToCentroidB.y,
-        manifold.rigidbodyB->angularVelocity * penetrationToCentroidB.x
-    };
-
-    Vector2 relativeVelocityA = Vector2Add(manifold.rigidbodyA->velocity, angularVelocityPenetrationCentroidA);
-    Vector2 relativeVelocityB = Vector2Add(manifold.rigidbodyB->velocity, angularVelocityPenetrationCentroidB);
-
-    Vector2 relativeVel = Vector2Subtract(relativeVelocityB, relativeVelocityA);
-    float velocityInNormal = Vector2DotProduct(relativeVel, manifold.normal);
-
-    if (velocityInNormal > 0) return;
-
-    float e = fmin(manifold.rigidbodyA->material.restitution, manifold.rigidbodyB->material.restitution);
-    float pToCentroidCrossNormalA = Vector2CrossProduct(penetrationToCentroidA, manifold.normal);
-    float pToCentroidCrossNormalB = Vector2CrossProduct(penetrationToCentroidB, manifold.normal);
-
-    float invMassSum = manifold.rigidbodyA->invMass + manifold.rigidbodyB->invMass;
-
-    float rigiAInvInertia = manifold.rigidbodyA->invInertia;
-    float rigiBInvInertia = manifold.rigidbodyB->invInertia;
-    float crossNSum = pToCentroidCrossNormalA * pToCentroidCrossNormalA * rigiAInvInertia + pToCentroidCrossNormalB * pToCentroidCrossNormalB * rigiBInvInertia;
-
-    float j = -(1 + e) * velocityInNormal;
-    j /= (invMassSum + crossNSum);
-
-    Vector2 impulseVector = Vector2Scale(manifold.normal, j);
-
-    manifold.rigidbodyA->velocity = Vector2Subtract(manifold.rigidbodyA->velocity, Vector2Scale(impulseVector, manifold.rigidbodyA->invMass));
-    manifold.rigidbodyB->velocity = Vector2Add(manifold.rigidbodyB->velocity, Vector2Scale(impulseVector, manifold.rigidbodyB->invMass));
-    manifold.rigidbodyA->angularVelocity += -pToCentroidCrossNormalA * j * rigiAInvInertia;
-    manifold.rigidbodyB->angularVelocity += pToCentroidCrossNormalB * j * rigiBInvInertia;
-
-    // Frictional impulse
-    Vector2 velocityInNormalDirection = Vector2Scale(manifold.normal, Vector2DotProduct(relativeVel, manifold.normal));
-    Vector2 tangent = Vector2Subtract(relativeVel, velocityInNormalDirection);
-    tangent = Vector2Scale(tangent, -1);
-    float minFriction = fmin(manifold.rigidbodyA->material.friction, manifold.rigidbodyB->material.friction);
-    if (Vector2Length(tangent) > 0.00001f) {
-        tangent = Vector2Normalize(tangent);
-    }
-
-    float pToCentroidCrossTangentA = Vector2CrossProduct(penetrationToCentroidA, tangent);
-    float pToCentroidCrossTangentB = Vector2CrossProduct(penetrationToCentroidB, tangent);
-
-    float crossSumTangent = pToCentroidCrossTangentA * pToCentroidCrossTangentA * rigiAInvInertia + pToCentroidCrossTangentB * pToCentroidCrossTangentB * rigiBInvInertia;
-    float frictionalImpulse = -(1 + e) * Vector2DotProduct(relativeVel, tangent) * minFriction;
-    frictionalImpulse /= (invMassSum + crossSumTangent);
-    if (frictionalImpulse > j) {
-        frictionalImpulse = j;
-    }
-
-    Vector2 frictionalImpulseVector = Vector2Scale(tangent, frictionalImpulse);
-
-    manifold.rigidbodyA->velocity = Vector2Subtract(manifold.rigidbodyA->velocity, Vector2Scale(frictionalImpulseVector, manifold.rigidbodyA->invMass));
-    manifold.rigidbodyB->velocity = Vector2Add(manifold.rigidbodyB->velocity, Vector2Scale(frictionalImpulseVector, manifold.rigidbodyB->invMass));
-
-    manifold.rigidbodyA->angularVelocity += -pToCentroidCrossTangentA * frictionalImpulse * rigiAInvInertia;
-    manifold.rigidbodyB->angularVelocity += pToCentroidCrossTangentB * frictionalImpulse * rigiBInvInertia;
-}
-
-void PositionalCorrection(CollisionManifold manifold) {
-    float correctionPercentage = 0.9f;
-    float amountToCorrect = (manifold.depth / (manifold.rigidbodyA->invMass + manifold.rigidbodyB->invMass)) * correctionPercentage;
-    Vector2 correctionVector = Vector2Scale(manifold.normal, amountToCorrect);
-
-    Vector2 rigiAMovement = Vector2Scale(correctionVector, manifold.rigidbodyA->invMass * -1);
-    Vector2 rigiBMovement = Vector2Scale(correctionVector, manifold.rigidbodyB->invMass);
-
-    MovePolygon(manifold.rigidbodyA->polygon, rigiAMovement);
-    MovePolygon(manifold.rigidbodyB->polygon, rigiBMovement);
-}
-
-// Collision Dedection
-
-CollisionManifold CheckCollisions(Rigidbody* rigidbodyA, Rigidbody* rigidbodyB) {
-    Polygon* shapeA = rigidbodyA->polygon;
-    Polygon* shapeB = rigidbodyB->polygon;
-
-    CollisionManifold resultingContact = { 0 };
-
-    CollisionManifold contactPolyA = GetContactPoint(shapeA, shapeB);
-    if (!contactPolyA.colliding) return resultingContact;
-
-    CollisionManifold contactPolyB = GetContactPoint(shapeB, shapeA);
-    if (!contactPolyB.colliding) return resultingContact;
-
-    if (contactPolyA.depth < contactPolyB.depth) {
-        Vector2 minus = Vector2Scale(contactPolyA.normal, contactPolyA.depth);
-        resultingContact = CreateCollisionManifold(contactPolyA.depth, contactPolyA.normal, Vector2Subtract(contactPolyA.penetrationPoint, minus));
-    } else {
-        resultingContact = CreateCollisionManifold(contactPolyB.depth, Vector2Scale(contactPolyB.normal, -1), contactPolyB.penetrationPoint);
-    }
-
-    resultingContact.colliding = true;
-    resultingContact.rigidbodyA = rigidbodyA;
-    resultingContact.rigidbodyB = rigidbodyB;
-    return resultingContact;
-}
-
-CollisionManifold GetContactPoint(Polygon* shapePolygonA, Polygon* shapePolygonB) {
-    CollisionManifold contact = { 0 };
-    float minimumPenetration = 100000.0f;
-
-    for (int i = 0; i < shapePolygonA->vertexCount; i++) {
-        Vector2 pointOnEdge = shapePolygonA->vertices[i];
-        Vector2 normalOnEdge = shapePolygonA->normals[i];
-
-        SupportPoint supportPoint = FindSupportPoint(normalOnEdge, pointOnEdge, shapePolygonB->vertices, shapePolygonB->vertexCount);
-        if(!supportPoint.valid) return contact;
-
-        if (supportPoint.penetrationDepth < minimumPenetration) {
-            minimumPenetration = supportPoint.penetrationDepth;
-            contact = CreateCollisionManifold(minimumPenetration, normalOnEdge, supportPoint.vertex);
-        }
-    }
-
-    contact.colliding = true;
-    return contact;
+void DestroyBody(Rigidbody rigidbody) {
+    MemFree(rigidbody.vertices);
+    MemFree(rigidbody.normals);
+    MemFree(rigidbody.transformedVertices);
+    MemFree(rigidbody.transformedNormals);
 }
 
 SupportPoint FindSupportPoint(Vector2 normalOnEdge, Vector2 pointOnEdge, Vector2* otherPolygonVertices, int vertexCount) {
@@ -446,12 +170,177 @@ SupportPoint FindSupportPoint(Vector2 normalOnEdge, Vector2 pointOnEdge, Vector2
     return supportPoint;
 }
 
-void HandleCollision(Rigidbody* rb1, Rigidbody* rb2) {
-    CollisionManifold collisionManifold = CheckCollisions(rb1, rb2);
-    if (collisionManifold.colliding) {
-        ResolveCollision(collisionManifold);
-        PositionalCorrection(collisionManifold);
+Manifold GetContactPoint(Rigidbody* rigidbodyA, Rigidbody* rigidbodyB) {
+    Manifold contact = { 0 };
+    float minimumPenetration = 1000000.0f;
+
+    for (int i = 0; i < rigidbodyA->vertexCount; i++) {
+        Vector2 pointOnEdge = rigidbodyA->transformedVertices[i];
+        Vector2 normalOnEdge = rigidbodyA->transformedNormals[i];
+
+        SupportPoint supportPoint = FindSupportPoint(normalOnEdge, pointOnEdge, rigidbodyB->transformedVertices, rigidbodyB->vertexCount);
+        if(!supportPoint.valid) return contact;
+
+        if (supportPoint.penetrationDepth < minimumPenetration) {
+            minimumPenetration = supportPoint.penetrationDepth;
+
+            contact.depth = minimumPenetration;
+            contact.normal = normalOnEdge;
+            contact.penetrationPoint = supportPoint.vertex;
+        }
     }
+
+    contact.colliding = true;
+    return contact;
+}
+
+Manifold CheckCollisions(Rigidbody* rigidbodyA, Rigidbody* rigidbodyB) {
+    Manifold result = { 0 };
+
+    Manifold contactPolyA = GetContactPoint(rigidbodyA, rigidbodyB);
+    if (!contactPolyA.colliding) return result;
+
+    Manifold contactPolyB = GetContactPoint(rigidbodyB, rigidbodyA);
+    if (!contactPolyB.colliding) return result;
+
+    if (contactPolyA.depth < contactPolyB.depth) {
+        Vector2 minus = Vector2Scale(contactPolyA.normal, contactPolyA.depth);
+        result.depth = contactPolyA.depth;
+        result.normal = contactPolyA.normal;
+        result.penetrationPoint = Vector2Subtract(contactPolyA.penetrationPoint, minus);
+    } else {
+        result.depth = contactPolyB.depth;
+        result.normal = Vector2Scale(contactPolyB.normal, -1);
+        result.penetrationPoint = contactPolyB.penetrationPoint;
+    }
+
+    result.colliding = true;
+    return result;
+}
+
+void ResolveCollision(Manifold manifold, Rigidbody* rigidbodyA, Rigidbody* rigidbodyB) {
+    if (rigidbodyA->isKinematic && rigidbodyB->isKinematic) return;
+
+    Vector2 penetrationToCentroidA = Vector2Subtract(manifold.penetrationPoint, rigidbodyA->position);
+    Vector2 penetrationToCentroidB = Vector2Subtract(manifold.penetrationPoint, rigidbodyB->position);
+
+    Vector2 angularVelocityPenetrationCentroidA = (Vector2){
+        -1 * rigidbodyA->angularVelocity * penetrationToCentroidA.y,
+        rigidbodyA->angularVelocity * penetrationToCentroidA.x
+    };
+
+    Vector2 angularVelocityPenetrationCentroidB = (Vector2){
+        -1 * rigidbodyB->angularVelocity * penetrationToCentroidB.y,
+        rigidbodyB->angularVelocity * penetrationToCentroidB.x
+    };
+
+    Vector2 relativeVelocityA = Vector2Add(rigidbodyA->velocity, angularVelocityPenetrationCentroidA);
+    Vector2 relativeVelocityB = Vector2Add(rigidbodyB->velocity, angularVelocityPenetrationCentroidB);
+
+    Vector2 relativeVel = Vector2Subtract(relativeVelocityB, relativeVelocityA);
+    float velocityInNormal = Vector2DotProduct(relativeVel, manifold.normal);
+
+    if (velocityInNormal > 0) return;
+
+    float e = fmin(rigidbodyA->restitution, rigidbodyB->restitution);
+    float pToCentroidCrossNormalA = Vector2CrossProduct(penetrationToCentroidA, manifold.normal);
+    float pToCentroidCrossNormalB = Vector2CrossProduct(penetrationToCentroidB, manifold.normal);
+
+    float invMassSum = rigidbodyA->invMass + rigidbodyB->invMass;
+
+    float rigiAInvInertia = rigidbodyA->invInertia;
+    float rigiBInvInertia = rigidbodyB->invInertia;
+    float crossNSum = pToCentroidCrossNormalA * pToCentroidCrossNormalA * rigiAInvInertia + pToCentroidCrossNormalB * pToCentroidCrossNormalB * rigiBInvInertia;
+
+    float j = -(1 + e) * velocityInNormal;
+    j /= (invMassSum + crossNSum);
+
+    Vector2 impulseVector = Vector2Scale(manifold.normal, j);
+
+    rigidbodyA->velocity = Vector2Subtract(rigidbodyA->velocity, Vector2Scale(impulseVector, rigidbodyA->invMass));
+    rigidbodyB->velocity = Vector2Add(rigidbodyB->velocity, Vector2Scale(impulseVector, rigidbodyB->invMass));
+    rigidbodyA->angularVelocity += -pToCentroidCrossNormalA * j * rigiAInvInertia;
+    rigidbodyB->angularVelocity += pToCentroidCrossNormalB * j * rigiBInvInertia;
+
+    // Frictional impulse
+    Vector2 velocityInNormalDirection = Vector2Scale(manifold.normal, Vector2DotProduct(relativeVel, manifold.normal));
+    Vector2 tangent = Vector2Subtract(relativeVel, velocityInNormalDirection);
+    tangent = Vector2Scale(tangent, -1);
+    float minFriction = fmin(rigidbodyA->friction, rigidbodyB->friction);
+    if (Vector2Length(tangent) > 0.00001f) {
+        tangent = Vector2Normalize(tangent);
+    }
+
+    float pToCentroidCrossTangentA = Vector2CrossProduct(penetrationToCentroidA, tangent);
+    float pToCentroidCrossTangentB = Vector2CrossProduct(penetrationToCentroidB, tangent);
+
+    float crossSumTangent = pToCentroidCrossTangentA * pToCentroidCrossTangentA * rigiAInvInertia + pToCentroidCrossTangentB * pToCentroidCrossTangentB * rigiBInvInertia;
+    float frictionalImpulse = -(1 + e) * Vector2DotProduct(relativeVel, tangent) * minFriction;
+    frictionalImpulse /= (invMassSum + crossSumTangent);
+    if (frictionalImpulse > j) {
+        frictionalImpulse = j;
+    }
+
+    Vector2 frictionalImpulseVector = Vector2Scale(tangent, frictionalImpulse);
+
+    rigidbodyA->velocity = Vector2Subtract(rigidbodyA->velocity, Vector2Scale(frictionalImpulseVector, rigidbodyA->invMass));
+    rigidbodyB->velocity = Vector2Add(rigidbodyB->velocity, Vector2Scale(frictionalImpulseVector, rigidbodyB->invMass));
+
+    rigidbodyA->angularVelocity += -pToCentroidCrossTangentA * frictionalImpulse * rigiAInvInertia;
+    rigidbodyB->angularVelocity += pToCentroidCrossTangentB * frictionalImpulse * rigiBInvInertia;
+
+    float correctionPercentage = 0.9f;
+    float amountToCorrect = (manifold.depth / (rigidbodyA->invMass + rigidbodyB->invMass)) * correctionPercentage;
+    Vector2 correctionVector = Vector2Scale(manifold.normal, amountToCorrect);
+
+    Vector2 rigiAMovement = Vector2Scale(correctionVector, rigidbodyA->invMass * -1);
+    Vector2 rigiBMovement = Vector2Scale(correctionVector, rigidbodyB->invMass);
+
+    rigidbodyA->position = Vector2Add(rigidbodyA->position, rigiAMovement);
+    rigidbodyB->position = Vector2Add(rigidbodyB->position, rigiBMovement);
+
+    TransformPoints(rigidbodyA);
+    TransformPoints(rigidbodyB);
+}
+
+void AddForce(Rigidbody* body, Vector2 force) {
+    body->velocity = Vector2Add(body->velocity, Vector2Scale(force, body->invMass));
+}
+
+void ApplyForceAtPoint(Rigidbody* body, Vector2 force, Vector2 point) {
+    Vector2 r = Vector2Subtract(point, body->position);
+    float torque = Vector2CrossProduct(r, force);
+
+    body->angularVelocity += torque * body->invInertia;
+    body->velocity = Vector2Add(body->velocity, Vector2Scale(force, body->invMass));
+}
+
+void AddTorque(Rigidbody* body, float torque) {
+    body->angularVelocity += torque * body->invInertia;
+}
+
+Anchor CreateAnchor(Rigidbody* rigidbody, Vector2 point) {
+    Vector2 p1 = rigidbody->transformedVertices[0];
+    Vector2 p2 = rigidbody->transformedVertices[1];
+    Vector2 d = Vector2Subtract(p2, p1);
+    Vector2 dPerp = (Vector2){-d.y, d.x};
+    Vector2 dp3 = Vector2Subtract(point, p1);
+
+    float denom = d.x * d.x + d.y * d.y;
+    float x = (dp3.x * d.x + dp3.y * d.y) / denom;
+    float y = (dp3.x * dPerp.x + dp3.y * dPerp.y) / denom;
+
+    Anchor anchor = { .point = {x, y}, .rigidbody = rigidbody };
+    return anchor;
+}
+
+Vector2 AnchorPosition(Anchor anchor) {
+    Vector2 p1 = anchor.rigidbody->transformedVertices[0];
+    Vector2 p2 = anchor.rigidbody->transformedVertices[1];
+    Vector2 d = Vector2Subtract(p2, p1);
+    Vector2 dPerp = (Vector2){-d.y, d.x};
+
+    return Vector2Add(p1, Vector2Add(Vector2Scale(d, anchor.point.x), Vector2Scale(dPerp, anchor.point.y)));
 }
 
 #endif
